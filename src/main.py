@@ -1,0 +1,169 @@
+"""
+Main entry point for NoTocBot.
+Supports both Polling (local) and Webhook (production) modes.
+
+Mode selection based on WEBHOOK_URL environment variable:
+- If WEBHOOK_URL is set -> Webhook mode (Production on Render)
+- If WEBHOOK_URL is empty/not set -> Polling mode (Local development)
+"""
+
+import logging
+import asyncio
+import sys
+import os
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request, Response
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+
+from src.config import TELEGRAM_TOKEN, WEBHOOK_URL, HOST, PORT
+from src.bot.handlers import (
+    start_command, help_command, add_command, paid_command, 
+    nlp_message_handler, button_callback_handler, alias_command,
+    balance_command, summary_command, balance_callback_handler,
+    history_command, history_callback_handler
+)
+
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+# Global application instance
+ptb_app: Application = None
+
+
+def create_application() -> Application:
+    """Create and configure the Telegram Bot application."""
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    
+    # Register command handlers
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("add", add_command))
+    app.add_handler(CommandHandler("paid", paid_command))
+    app.add_handler(CommandHandler("tra", paid_command))  # Vietnamese alias for /paid
+    app.add_handler(CommandHandler("alias", alias_command))  # Story 2.3: Alias management
+    app.add_handler(CommandHandler("balance", balance_command))  # Story 3.1: Balance inquiry
+    app.add_handler(CommandHandler("summary", summary_command))  # Story 3.1: Summary
+    app.add_handler(CommandHandler("history", history_command))  # Story 3.2: Transaction history
+    app.add_handler(CommandHandler("log", history_command))  # Alias for /history
+    
+    # Register callback handlers for inline buttons
+    app.add_handler(CallbackQueryHandler(balance_callback_handler, pattern=r"^bal_"))
+    app.add_handler(CallbackQueryHandler(history_callback_handler, pattern=r"^hist_"))
+    app.add_handler(CallbackQueryHandler(button_callback_handler))  # Default for debtor selection
+    
+    # Register NLP message handler (natural language)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, nlp_message_handler))
+    
+    return app
+
+
+# ==================== WEBHOOK MODE (Production) ====================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan manager - initialize and cleanup bot."""
+    global ptb_app
+    
+    ptb_app = create_application()
+    
+    # Set webhook URL
+    webhook_url = f"{WEBHOOK_URL}/webhook"
+    
+    await ptb_app.initialize()
+    await ptb_app.bot.set_webhook(url=webhook_url)
+    await ptb_app.start()
+    
+    logger.info(f"🚀 Bot started in WEBHOOK mode")
+    logger.info(f"📡 Webhook URL: {webhook_url}")
+    
+    yield
+    
+    # Cleanup
+    await ptb_app.stop()
+    await ptb_app.shutdown()
+    logger.info("Bot stopped.")
+
+
+# Create FastAPI app (only used in webhook mode)
+app = FastAPI(
+    title="NoTocBot",
+    description="Telegram Bot for debt management",
+    lifespan=lifespan
+)
+
+
+@app.post("/webhook")
+async def webhook_handler(request: Request) -> Response:
+    """Handle incoming Telegram updates via webhook."""
+    try:
+        data = await request.json()
+        update = Update.de_json(data, ptb_app.bot)
+        await ptb_app.process_update(update)
+        return Response(status_code=200)
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return Response(status_code=500)
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Render."""
+    return {"status": "healthy", "bot": "NoTocBot"}
+
+
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {"message": "NoTocBot is running!", "mode": "webhook"}
+
+
+# ==================== POLLING MODE (Local Development) ====================
+
+async def run_polling():
+    """Run bot in polling mode for local development."""
+    app = create_application()
+    
+    async with app:
+        await app.initialize()
+        await app.start()
+        logger.info("🤖 Bot started in POLLING mode (local development)")
+        logger.info("Press Ctrl+C to stop.")
+        
+        await app.updater.start_polling(
+            allowed_updates=["message", "edited_message", "callback_query"]
+        )
+        
+        try:
+            await asyncio.Event().wait()
+        except KeyboardInterrupt:
+            logger.info("Stopping bot...")
+        finally:
+            await app.updater.stop()
+            await app.stop()
+
+
+# ==================== ENTRY POINT ====================
+
+if __name__ == "__main__":
+    # On Windows, use SelectorEventLoop for psycopg compatibility
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    
+    # Check if WEBHOOK_URL is set (Production mode)
+    webhook_url = os.getenv("WEBHOOK_URL", "").strip()
+    
+    if webhook_url:
+        # Production: Run with uvicorn (webhook mode)
+        import uvicorn
+        logger.info(f"Starting in WEBHOOK mode...")
+        uvicorn.run(app, host=HOST, port=PORT)
+    else:
+        # Local: Run polling mode
+        logger.info("Starting in POLLING mode (no WEBHOOK_URL set)...")
+        asyncio.run(run_polling())
