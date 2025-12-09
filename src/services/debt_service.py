@@ -239,17 +239,16 @@ async def delete_all_debt_for_user(
     Returns:
         Number of debtors deleted
     """
-    # First count how many will be deleted
-    count_result = await session.execute(
-        select(func.count(Debtor.id)).where(Debtor.user_id == user_id)
+    # Load all debtors for this user
+    result = await session.execute(
+        select(Debtor).where(Debtor.user_id == user_id)
     )
-    count = count_result.scalar() or 0
+    debtors = list(result.scalars().all())
+    count = len(debtors)
     
-    if count > 0:
-        # Delete all debtors for this user (cascade will handle transactions/aliases)
-        await session.execute(
-            delete(Debtor).where(Debtor.user_id == user_id)
-        )
+    # Delete via ORM to trigger SQLAlchemy cascade
+    for debtor in debtors:
+        await session.delete(debtor)
     
     return count
 

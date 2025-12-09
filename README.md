@@ -18,7 +18,7 @@
 
 ## 📋 Overview
 
-**NoTocBot** (Vietnamese: "Nợ Tóc Bot" - Debt Tracker Bot) is a personal finance assistant that helps users track who owes them money and manage repayments through natural Vietnamese conversations. Instead of manually maintaining spreadsheets, users can simply chat with the bot using everyday language.
+**NoTocBot** (Vietnamese: "Nợ Tộc Bot" - Debt Tracker Bot) is a personal finance assistant that helps users track who owes them money and manage repayments through natural Vietnamese conversations. Instead of manually maintaining spreadsheets, users can simply chat with the bot using everyday language.
 
 ### 🎯 Problem Statement
 
