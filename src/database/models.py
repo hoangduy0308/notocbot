@@ -10,6 +10,7 @@ from sqlalchemy import (
     String,
     DateTime,
     Numeric,
+    Integer,
     Enum as SQLEnum,
     ForeignKey,
     Index,
@@ -27,6 +28,7 @@ class User(Base):
     
     id = Column(BigInteger, primary_key=True)
     telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
+    username = Column(String(255), nullable=True, index=True)  # @username for search/linking
     full_name = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
@@ -34,7 +36,7 @@ class User(Base):
     debtors = relationship("Debtor", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
-        return f"<User(id={self.id}, telegram_id={self.telegram_id}, name={self.full_name})>"
+        return f"<User(id={self.id}, telegram_id={self.telegram_id}, username={self.username}, name={self.full_name})>"
 
 
 class Debtor(Base):
@@ -45,6 +47,7 @@ class Debtor(Base):
     id = Column(BigInteger, primary_key=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
+    telegram_id = Column(BigInteger, nullable=True, index=True)  # Story 4.1: Link debtor to Telegram user
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
@@ -53,7 +56,7 @@ class Debtor(Base):
     transactions = relationship("Transaction", back_populates="debtor", cascade="all, delete-orphan")
     
     def __repr__(self):
-        return f"<Debtor(id={self.id}, name={self.name}, user_id={self.user_id})>"
+        return f"<Debtor(id={self.id}, name={self.name}, user_id={self.user_id}, telegram_id={self.telegram_id})>"
 
 
 class Alias(Base):
@@ -97,4 +100,17 @@ class Transaction(Base):
         return f"<Transaction(id={self.id}, debtor_id={self.debtor_id}, type={self.type}, amount={self.amount})>"
 
 
-__all__ = ["Base", "User", "Debtor", "Alias", "Transaction"]
+class RateLimit(Base):
+    """Rate limiting buckets for Telegram users."""
+    
+    __tablename__ = "rate_limits"
+    
+    user_id = Column(BigInteger, primary_key=True)  # Telegram user_id
+    tokens = Column(Integer, nullable=False, default=60)
+    last_refill_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    def __repr__(self):
+        return f"<RateLimit(user_id={self.user_id}, tokens={self.tokens})>"
+
+
+__all__ = ["Base", "User", "Debtor", "Alias", "Transaction", "RateLimit"]

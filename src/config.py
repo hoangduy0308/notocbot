@@ -23,10 +23,20 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL", "http://localhost:8000")
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8000))
 
+# Rate limiting configuration
+RATE_LIMIT_MAX_TOKENS = int(os.getenv("RATE_LIMIT_MAX_TOKENS", "60"))  # requests per minute
+RATE_LIMIT_REFILL_SECONDS = int(os.getenv("RATE_LIMIT_REFILL_SECONDS", "60"))  # refill interval
+
+# Webhook secret token for Telegram webhook verification
+WEBHOOK_SECRET_TOKEN = os.getenv("WEBHOOK_SECRET_TOKEN", "")
+
 __all__ = [
     "TELEGRAM_TOKEN",
     "DATABASE_URL",
     "WEBHOOK_URL",
     "HOST",
     "PORT",
+    "RATE_LIMIT_MAX_TOKENS",
+    "RATE_LIMIT_REFILL_SECONDS",
+    "WEBHOOK_SECRET_TOKEN",
 ]

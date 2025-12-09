@@ -49,6 +49,75 @@ async def get_or_create_debtor(
     return debtor
 
 
+async def get_or_create_debtor_by_telegram_id(
+    session: AsyncSession,
+    user_id: int,
+    debtor_telegram_id: int,
+    debtor_name: str,
+    threshold: int = 80
+) -> Debtor:
+    """
+    Get or create debtor by Telegram ID for group chat mentions.
+    
+    Priority order:
+    1. Find by exact telegram_id match
+    2. Find by fuzzy name match and update telegram_id if NULL
+    3. Create new debtor with telegram_id
+    
+    Args:
+        session: AsyncSession instance
+        user_id: User ID (creditor)
+        debtor_telegram_id: Telegram user ID of the mentioned person
+        debtor_name: Display name from Telegram (first_name)
+        threshold: Fuzzy match threshold (default 80% for stricter matching)
+        
+    Returns:
+        Debtor instance (new or existing, with telegram_id set)
+    """
+    # Step 1: Find by telegram_id (most reliable)
+    result = await session.execute(
+        select(Debtor).where(
+            (Debtor.user_id == user_id) &
+            (Debtor.telegram_id == debtor_telegram_id)
+        )
+    )
+    debtor = result.scalar_one_or_none()
+    
+    if debtor:
+        # Update name if changed
+        if debtor.name != debtor_name:
+            debtor.name = debtor_name
+        return debtor
+    
+    # Step 2: Try fuzzy match by name (for linking existing debtor to telegram_id)
+    fuzzy_result = await search_debtors_fuzzy(
+        session, user_id, debtor_name, threshold=threshold
+    )
+    
+    if fuzzy_result:
+        # Take the best match if score is high enough
+        best_debtor, score = fuzzy_result[0]
+        
+        # Only link if the existing debtor doesn't have a telegram_id
+        # (to avoid overwriting another person's ID)
+        if best_debtor.telegram_id is None:
+            best_debtor.telegram_id = debtor_telegram_id
+            # Optionally update name to match Telegram display name
+            # best_debtor.name = debtor_name
+            return best_debtor
+    
+    # Step 3: Create new debtor with telegram_id
+    debtor = Debtor(
+        user_id=user_id,
+        name=debtor_name,
+        telegram_id=debtor_telegram_id
+    )
+    session.add(debtor)
+    await session.flush()
+    
+    return debtor
+
+
 async def search_debtors_fuzzy(
     session: AsyncSession,
     user_id: int,
@@ -270,4 +339,39 @@ async def resolve_debtor(
     return (None, [], "none")
 
 
-__all__ = ["get_or_create_debtor", "search_debtors_fuzzy", "add_alias", "get_debtor_by_alias", "resolve_debtor"]
+async def update_debtor_telegram_id(
+    session: AsyncSession,
+    debtor_id: int,
+    telegram_id: int
+) -> bool:
+    """
+    Update debtor's telegram_id for linking.
+    
+    Args:
+        session: AsyncSession instance
+        debtor_id: ID of the debtor
+        telegram_id: Telegram ID to link
+        
+    Returns:
+        True if successful, False if debtor not found
+    """
+    result = await session.execute(
+        select(Debtor).where(Debtor.id == debtor_id)
+    )
+    debtor = result.scalar_one_or_none()
+    
+    if debtor:
+        debtor.telegram_id = telegram_id
+        return True
+    return False
+
+
+__all__ = [
+    "get_or_create_debtor",
+    "get_or_create_debtor_by_telegram_id",
+    "search_debtors_fuzzy",
+    "add_alias",
+    "get_debtor_by_alias",
+    "resolve_debtor",
+    "update_debtor_telegram_id"
+]

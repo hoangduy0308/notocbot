@@ -14,7 +14,8 @@ async def add_transaction(
     debtor_id: int,
     amount: Decimal,
     transaction_type: str,  # "DEBT" or "CREDIT"
-    note: str = None
+    note: str = None,
+    group_id: int = None
 ) -> Transaction:
     """
     Add a new transaction for a debtor.
@@ -25,6 +26,7 @@ async def add_transaction(
         amount: Transaction amount (always positive)
         transaction_type: "DEBT" or "CREDIT"
         note: Optional note about the transaction
+        group_id: Optional Telegram group/chat ID where transaction was recorded
         
     Returns:
         Transaction instance
@@ -33,7 +35,8 @@ async def add_transaction(
         debtor_id=debtor_id,
         amount=amount,
         type=transaction_type,
-        note=note
+        note=note,
+        group_id=group_id
     )
     session.add(transaction)
     await session.flush()

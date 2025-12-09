@@ -17,12 +17,19 @@ from fastapi import FastAPI, Request, Response
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-from src.config import TELEGRAM_TOKEN, WEBHOOK_URL, HOST, PORT
+from src.config import TELEGRAM_TOKEN, WEBHOOK_URL, HOST, PORT, WEBHOOK_SECRET_TOKEN
+from src.security.webhook_auth import (
+    get_telegram_secret_from_headers,
+    is_valid_telegram_secret,
+    extract_user_id_from_update_dict
+)
+from src.security.rate_limiter import is_allowed
+from src.database.config import AsyncSessionLocal
 from src.bot.handlers import (
     start_command, help_command, add_command, paid_command, 
     nlp_message_handler, button_callback_handler, alias_command,
     balance_command, summary_command, balance_callback_handler,
-    history_command, history_callback_handler
+    history_command, history_callback_handler, link_command
 )
 
 # Configure logging
@@ -47,6 +54,7 @@ def create_application() -> Application:
     app.add_handler(CommandHandler("paid", paid_command))
     app.add_handler(CommandHandler("tra", paid_command))  # Vietnamese alias for /paid
     app.add_handler(CommandHandler("alias", alias_command))  # Story 2.3: Alias management
+    app.add_handler(CommandHandler("link", link_command))    # Story 4.2: Link debtor to Telegram user
     app.add_handler(CommandHandler("balance", balance_command))  # Story 3.1: Balance inquiry
     app.add_handler(CommandHandler("summary", summary_command))  # Story 3.1: Summary
     app.add_handler(CommandHandler("history", history_command))  # Story 3.2: Transaction history
@@ -71,16 +79,23 @@ async def lifespan(app: FastAPI):
     global ptb_app
     
     ptb_app = create_application()
+    await ptb_app.initialize()
     
-    # Set webhook URL
+    # Set webhook URL (must be HTTPS for Telegram)
     webhook_url = f"{WEBHOOK_URL}/webhook"
     
-    await ptb_app.initialize()
-    await ptb_app.bot.set_webhook(url=webhook_url)
-    await ptb_app.start()
+    try:
+        await ptb_app.bot.set_webhook(
+            url=webhook_url,
+            secret_token=WEBHOOK_SECRET_TOKEN if WEBHOOK_SECRET_TOKEN else None
+        )
+        logger.info(f"🚀 Bot started in WEBHOOK mode")
+        logger.info(f"📡 Webhook URL: {webhook_url}")
+    except Exception as e:
+        logger.error(f"❌ Failed to set webhook: {e}")
+        logger.info("⚠️ Bot will still accept webhook requests if URL is correct")
     
-    logger.info(f"🚀 Bot started in WEBHOOK mode")
-    logger.info(f"📡 Webhook URL: {webhook_url}")
+    await ptb_app.start()
     
     yield
     
@@ -102,10 +117,29 @@ app = FastAPI(
 async def webhook_handler(request: Request) -> Response:
     """Handle incoming Telegram updates via webhook."""
     try:
+        # Step 1: Verify webhook secret (if configured)
+        if WEBHOOK_SECRET_TOKEN:
+            secret = get_telegram_secret_from_headers(request)
+            if not is_valid_telegram_secret(secret, WEBHOOK_SECRET_TOKEN):
+                logger.warning("Invalid or missing Telegram secret token on webhook")
+                return Response(status_code=401)
+        
+        # Step 2: Parse update data
         data = await request.json()
+        
+        # Step 3: Check rate limit per user
+        user_id = extract_user_id_from_update_dict(data)
+        if user_id is not None:
+            async with AsyncSessionLocal() as session:
+                if not await is_allowed(user_id, session):
+                    logger.info(f"Rate limit exceeded for user_id={user_id}")
+                    return Response(status_code=429)
+        
+        # Step 4: Process the update
         update = Update.de_json(data, ptb_app.bot)
         await ptb_app.process_update(update)
         return Response(status_code=200)
+        
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return Response(status_code=500)
