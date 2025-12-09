@@ -32,6 +32,17 @@ class MonthlyTrend:
     net_change: Decimal
 
 
+@dataclass
+class TransactionWithDebtor:
+    id: int
+    debtor_id: int
+    debtor_name: str
+    amount: Decimal
+    type: str
+    note: Optional[str]
+    created_at: str
+
+
 async def get_user_summary(session: AsyncSession, user_id: int) -> UserSummary:
     """Get complete debt summary for a user."""
     balance_expr = func.sum(
@@ -119,10 +130,10 @@ async def get_transaction_history_for_user(
     user_id: int,
     debtor_id: Optional[int] = None,
     limit: int = 50
-) -> List[Transaction]:
-    """Get transaction history for user, optionally filtered by debtor."""
+) -> List[TransactionWithDebtor]:
+    """Get transaction history for user with debtor names, optionally filtered by debtor."""
     query = (
-        select(Transaction)
+        select(Transaction, Debtor.name.label("debtor_name"))
         .join(Debtor, Transaction.debtor_id == Debtor.id)
         .where(Debtor.user_id == user_id)
     )
@@ -133,7 +144,20 @@ async def get_transaction_history_for_user(
     query = query.order_by(Transaction.created_at.desc()).limit(limit)
 
     result = await session.execute(query)
-    return list(result.scalars().all())
+    rows = result.all()
+    
+    return [
+        TransactionWithDebtor(
+            id=row.Transaction.id,
+            debtor_id=row.Transaction.debtor_id,
+            debtor_name=row.debtor_name,
+            amount=row.Transaction.amount,
+            type=row.Transaction.type,
+            note=row.Transaction.note,
+            created_at=row.Transaction.created_at.isoformat()
+        )
+        for row in rows
+    ]
 
 
 async def get_monthly_trends(
@@ -172,6 +196,7 @@ __all__ = [
     "UserSummary",
     "DebtByPerson",
     "MonthlyTrend",
+    "TransactionWithDebtor",
     "get_user_summary",
     "get_debt_by_person",
     "get_transaction_history_for_user",

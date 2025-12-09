@@ -87,6 +87,7 @@ class DebtByPersonResponse(BaseModel):
 class TransactionResponse(BaseModel):
     id: int
     debtor_id: int
+    debtor_name: str
     amount: Decimal
     type: str
     note: Optional[str]
@@ -258,10 +259,11 @@ async def get_history(
         TransactionResponse(
             id=t.id,
             debtor_id=t.debtor_id,
+            debtor_name=t.debtor_name,
             amount=t.amount,
             type=t.type,
             note=t.note,
-            created_at=t.created_at.isoformat()
+            created_at=t.created_at
         )
         for t in transactions
     ]
