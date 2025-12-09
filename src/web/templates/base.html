@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}NoTocBot{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/dashboard.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col">
+    <!-- Navigation -->
+    <nav class="bg-indigo-600 text-white shadow-lg">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <a href="/dashboard" class="text-xl font-bold flex items-center gap-2">
+                <span>📊</span> NoTocBot
+            </a>
+            {% if user %}
+            <div class="flex items-center gap-4">
+                <span class="text-sm">{{ user.full_name }}</span>
+                <a href="/auth/logout" class="bg-indigo-700 hover:bg-indigo-800 px-4 py-2 rounded-lg text-sm transition">
+                    Đăng xuất
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-gray-300 py-4">
+        <div class="container mx-auto px-4 text-center text-sm">
+            <p>© 2024 NoTocBot - Quản lý công nợ thông minh</p>
+        </div>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

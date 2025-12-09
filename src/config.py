@@ -30,6 +30,9 @@ RATE_LIMIT_REFILL_SECONDS = int(os.getenv("RATE_LIMIT_REFILL_SECONDS", "60"))  #
 # Webhook secret token for Telegram webhook verification
 WEBHOOK_SECRET_TOKEN = os.getenv("WEBHOOK_SECRET_TOKEN", "")
 
+# JWT secret for web session tokens
+JWT_SECRET = os.getenv("JWT_SECRET", "your-default-secret-key-change-in-production")
+
 __all__ = [
     "TELEGRAM_TOKEN",
     "DATABASE_URL",
@@ -39,4 +42,5 @@ __all__ = [
     "RATE_LIMIT_MAX_TOKENS",
     "RATE_LIMIT_REFILL_SECONDS",
     "WEBHOOK_SECRET_TOKEN",
+    "JWT_SECRET",
 ]

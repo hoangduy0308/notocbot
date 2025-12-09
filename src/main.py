@@ -17,6 +17,7 @@ from alembic.config import Config
 from alembic import command
 
 from fastapi import FastAPI, Request, Response
+from fastapi.staticfiles import StaticFiles
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
@@ -36,6 +37,7 @@ from src.bot.handlers import (
     delete_transaction_command, delete_debtor_command, delete_all_command,
     delete_callback_handler
 )
+from src.web.dashboard_router import router as dashboard_router
 
 # Configure logging
 logging.basicConfig(
@@ -137,6 +139,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Include dashboard router and mount static files
+app.include_router(dashboard_router)
+app.mount("/static", StaticFiles(directory="src/web/static"), name="static")
+
 
 @app.post("/webhook")
 async def webhook_handler(request: Request) -> Response:
@@ -174,6 +180,12 @@ async def webhook_handler(request: Request) -> Response:
 async def health_check():
     """Health check endpoint for Render."""
     return {"status": "healthy", "bot": "NoTocBot"}
+
+
+@app.get("/api/bot-info")
+async def get_bot_info():
+    """Return bot username for Telegram Login Widget."""
+    return {"bot_username": ptb_app.bot.username if ptb_app else None}
 
 
 @app.get("/")

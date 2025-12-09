@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Bảng điều khiển - NoTocBot{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Greeting -->
+    <div class="bg-white rounded-xl shadow p-6">
+        <h1 class="text-2xl font-bold text-gray-800">Xin chào, {{ user.full_name }}!</h1>
+        <p class="text-gray-600 mt-1">Đây là tổng quan công nợ của bạn</p>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="summary-card bg-white rounded-xl shadow p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-gray-500 text-sm">Tổng số dư</p>
+                    <p id="total-balance" class="text-2xl font-bold text-gray-800">--</p>
+                </div>
+                <span class="text-3xl">💰</span>
+            </div>
+        </div>
+
+        <div class="summary-card bg-white rounded-xl shadow p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-gray-500 text-sm">Người khác nợ bạn</p>
+                    <p id="positive-balance" class="text-2xl font-bold text-green-600">--</p>
+                </div>
+                <span class="text-3xl">📈</span>
+            </div>
+        </div>
+
+        <div class="summary-card bg-white rounded-xl shadow p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-gray-500 text-sm">Bạn nợ người khác</p>
+                    <p id="negative-balance" class="text-2xl font-bold text-red-600">--</p>
+                </div>
+                <span class="text-3xl">📉</span>
+            </div>
+        </div>
+
+        <div class="summary-card bg-white rounded-xl shadow p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-gray-500 text-sm">Số người liên quan</p>
+                    <p id="debtor-count" class="text-2xl font-bold text-indigo-600">--</p>
+                </div>
+                <span class="text-3xl">👥</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Pie Chart -->
+        <div class="bg-white rounded-xl shadow p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Công nợ theo người</h2>
+            <div class="chart-container">
+                <canvas id="debt-pie-chart"></canvas>
+            </div>
+            <p id="pie-chart-empty" class="text-gray-500 text-center py-8 hidden">Chưa có dữ liệu</p>
+        </div>
+
+        <!-- Line Chart -->
+        <div class="bg-white rounded-xl shadow p-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Xu hướng theo tháng</h2>
+            <div class="chart-container">
+                <canvas id="monthly-trends-chart"></canvas>
+            </div>
+            <p id="line-chart-empty" class="text-gray-500 text-center py-8 hidden">Chưa có dữ liệu</p>
+        </div>
+    </div>
+
+    <!-- Transaction History -->
+    <div class="bg-white rounded-xl shadow p-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Lịch sử giao dịch</h2>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-sm font-medium text-gray-600">Ngày</th>
+                        <th class="px-4 py-3 text-sm font-medium text-gray-600">Người liên quan</th>
+                        <th class="px-4 py-3 text-sm font-medium text-gray-600">Mô tả</th>
+                        <th class="px-4 py-3 text-sm font-medium text-gray-600 text-right">Số tiền</th>
+                    </tr>
+                </thead>
+                <tbody id="transaction-table" class="divide-y divide-gray-200">
+                    <tr>
+                        <td colspan="4" class="px-4 py-8 text-center text-gray-500">Đang tải...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div id="pagination" class="mt-4 flex justify-center gap-2"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/dashboard.js') }}"></script>
+{% endblock %}

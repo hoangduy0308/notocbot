@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Đăng nhập - NoTocBot{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-center min-h-[60vh]">
+    <div class="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
+        <div class="mb-6">
+            <span class="text-6xl">📊</span>
+            <h1 class="text-2xl font-bold text-gray-800 mt-4">Chào mừng đến NoTocBot</h1>
+            <p class="text-gray-600 mt-2">Đăng nhập để quản lý công nợ của bạn</p>
+        </div>
+
+        <div class="my-8">
+            <script async src="https://telegram.org/js/telegram-widget.js?22"
+                data-telegram-login="{{ bot_username }}"
+                data-size="large"
+                data-onauth="onTelegramAuth(user)"
+                data-request-access="write">
+            </script>
+        </div>
+
+        <div class="text-sm text-gray-500">
+            <p>Đăng nhập bằng tài khoản Telegram của bạn</p>
+            <p class="mt-2">để truy cập bảng điều khiển quản lý công nợ</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function onTelegramAuth(user) {
+    fetch('/auth/telegram-login', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(user)
+    })
+    .then(response => {
+        if (response.ok) {
+            window.location.href = '/dashboard';
+        } else {
+            return response.json().then(data => {
+                alert('Đăng nhập thất bại: ' + (data.detail || 'Lỗi không xác định'));
+            });
+        }
+    })
+    .catch(error => {
+        console.error('Lỗi:', error);
+        alert('Có lỗi xảy ra khi đăng nhập');
+    });
+}
+</script>
+{% endblock %}
