@@ -13,6 +13,9 @@ import sys
 import os
 from contextlib import asynccontextmanager
 
+from alembic.config import Config
+from alembic import command
+
 from fastapi import FastAPI, Request, Response
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
@@ -41,6 +44,17 @@ logger = logging.getLogger(__name__)
 
 # Global application instance
 ptb_app: Application = None
+
+
+def run_migrations():
+    """Run Alembic migrations automatically on startup."""
+    try:
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("✅ Database migrations completed successfully")
+    except Exception as e:
+        logger.error(f"❌ Migration error: {e}")
+        raise
 
 
 def create_application() -> Application:
@@ -77,6 +91,9 @@ def create_application() -> Application:
 async def lifespan(app: FastAPI):
     """FastAPI lifespan manager - initialize and cleanup bot."""
     global ptb_app
+    
+    # Run migrations on startup
+    run_migrations()
     
     ptb_app = create_application()
     await ptb_app.initialize()
