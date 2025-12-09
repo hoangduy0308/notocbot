@@ -19,7 +19,12 @@ from src.services.debtor_service import (
     add_alias,
     update_debtor_telegram_id,
 )
-from src.utils.formatters import parse_amount
+from src.services.debt_service import (
+    get_balance,
+    get_transaction_with_owner_check,
+    get_debtor_count_for_user,
+)
+from src.utils.formatters import format_currency, parse_amount
 
 from .shared import (
     record_transaction,
@@ -60,8 +65,17 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /start - Bắt đầu sử dụng bot
 /help - Xem hướng dẫn này
 /add - Ghi lại một khoản nợ
+/paid - Ghi nhận trả nợ
 /balance - Xem số dư của một người
+/summary - Xem tổng kết tất cả
 /history - Xem lịch sử giao dịch
+/alias - Tạo biệt danh
+/link - Liên kết với Telegram user
+
+**🗑️ Xóa dữ liệu:**
+/xoagiaodich [ID] - Xóa một giao dịch
+/xoano [Tên] - Xóa toàn bộ nợ của một người
+/xoatatca - Xóa TẤT CẢ dữ liệu nợ
 
 **Cú pháp /add:** `/add [Tên người] [Số tiền] [Ghi chú (tùy chọn)]`
 
@@ -546,6 +560,222 @@ async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await message.reply_text("❌ Có lỗi xảy ra khi liên kết.")
 
 
+async def delete_transaction_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle /xoagiaodich command - Delete a single transaction by ID.
+    
+    Format: /xoagiaodich [ID]
+    Example: /xoagiaodich 123
+    """
+    user = update.effective_user
+    message = update.message
+    
+    if not context.args or len(context.args) != 1:
+        error_msg = """❌ Cú pháp không đúng!
+
+Cách dùng: `/xoagiaodich [ID giao dịch]`
+
+Ví dụ: `/xoagiaodich 123`
+
+💡 Xem ID giao dịch bằng lệnh `/history [Tên người]`"""
+        await message.reply_text(error_msg)
+        return
+    
+    try:
+        transaction_id = int(context.args[0])
+    except ValueError:
+        await message.reply_text("❌ ID giao dịch phải là số nguyên!")
+        return
+    
+    try:
+        async with AsyncSessionLocal() as session:
+            db_user = await get_or_create_user(
+                session,
+                telegram_id=user.id,
+                full_name=user.first_name or "Unknown",
+                username=user.username
+            )
+            
+            transaction = await get_transaction_with_owner_check(
+                session, db_user.id, transaction_id
+            )
+            
+            if not transaction:
+                await message.reply_text("❌ Không tìm thấy giao dịch này hoặc bạn không có quyền xóa.")
+                return
+            
+            # Get debtor name for display
+            from src.database.models import Debtor
+            debtor_result = await session.execute(
+                select(Debtor).where(Debtor.id == transaction.debtor_id)
+            )
+            debtor = debtor_result.scalar_one_or_none()
+            debtor_name = debtor.name if debtor else "Unknown"
+            
+            # Format transaction info
+            tx_type = "nợ thêm" if transaction.type == "DEBT" else "trả nợ"
+            amount_str = format_currency(transaction.amount)
+            note_str = f" ({transaction.note})" if transaction.note else ""
+            
+            # Show confirmation
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Xóa giao dịch này", callback_data=f"del_tx_{transaction_id}")],
+                [InlineKeyboardButton("❌ Hủy", callback_data="del_tx_cancel")]
+            ])
+            
+            msg = f"""⚠️ **XÁC NHẬN XÓA GIAO DỊCH**
+
+📋 **Chi tiết:**
+- Người: **{debtor_name}**
+- Loại: {tx_type}
+- Số tiền: **{amount_str}**{note_str}
+
+⚠️ Hành động này không thể hoàn tác!"""
+            
+            await message.reply_text(msg, reply_markup=keyboard, parse_mode="Markdown")
+            
+    except Exception as e:
+        await message.reply_text(f"❌ Lỗi: {str(e)}")
+
+
+async def delete_debtor_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle /xoano command - Delete all debts for a specific debtor.
+    
+    Format: /xoano [Name]
+    Example: /xoano Tuấn
+    """
+    user = update.effective_user
+    message = update.message
+    
+    if not context.args:
+        error_msg = """❌ Cú pháp không đúng!
+
+Cách dùng: `/xoano [Tên người]`
+
+Ví dụ: `/xoano Tuấn`
+
+⚠️ Lệnh này sẽ xóa TOÀN BỘ hồ sơ nợ và lịch sử giao dịch với người đó."""
+        await message.reply_text(error_msg)
+        return
+    
+    debtor_name = " ".join(context.args)
+    
+    try:
+        async with AsyncSessionLocal() as session:
+            db_user = await get_or_create_user(
+                session,
+                telegram_id=user.id,
+                full_name=user.first_name or "Unknown",
+                username=user.username
+            )
+            
+            exact_match, candidates, match_type = await resolve_debtor(
+                session, db_user.id, debtor_name
+            )
+            
+            if match_type == "none":
+                await message.reply_text(f"❌ Không tìm thấy người tên \"{debtor_name}\" trong danh bạ.")
+                return
+            
+            if exact_match:
+                # Show confirmation for exact match
+                balance = await get_balance(session, exact_match.id)
+                balance_str = format_currency(abs(balance))
+                
+                if balance > 0:
+                    balance_info = f"💰 Dư nợ hiện tại: {balance_str} (họ nợ bạn)"
+                elif balance < 0:
+                    balance_info = f"💸 Dư nợ hiện tại: {balance_str} (bạn nợ họ)"
+                else:
+                    balance_info = "✅ Hết nợ (0đ)"
+                
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(f"🗑️ Xóa hết với {exact_match.name}", callback_data=f"del_debtor_{exact_match.id}")],
+                    [InlineKeyboardButton("❌ Hủy", callback_data="del_debtor_cancel")]
+                ])
+                
+                msg = f"""⚠️ **XÁC NHẬN XÓA TOÀN BỘ HỒ SƠ NỢ**
+
+👤 Người: **{exact_match.name}**
+{balance_info}
+
+🗑️ Sẽ xóa:
+- Tất cả lịch sử giao dịch
+- Tất cả biệt danh
+
+⚠️ **Hành động này KHÔNG THỂ hoàn tác!**"""
+                
+                await message.reply_text(msg, reply_markup=keyboard, parse_mode="Markdown")
+                
+            elif candidates:
+                # Show fuzzy matches
+                buttons = []
+                for idx, (debtor, score) in enumerate(candidates[:5], 1):
+                    buttons.append([
+                        InlineKeyboardButton(
+                            f"{idx}. {debtor.name} ({score}%)",
+                            callback_data=f"del_pick_{debtor.id}"
+                        )
+                    ])
+                buttons.append([InlineKeyboardButton("❌ Hủy", callback_data="del_debtor_cancel")])
+                
+                keyboard = InlineKeyboardMarkup(buttons)
+                msg = "🔍 Bạn muốn xóa hồ sơ nợ của ai?"
+                await message.reply_text(msg, reply_markup=keyboard)
+                
+    except Exception as e:
+        await message.reply_text(f"❌ Lỗi: {str(e)}")
+
+
+async def delete_all_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle /xoatatca command - Delete ALL debt data for the current user.
+    
+    Format: /xoatatca
+    """
+    user = update.effective_user
+    message = update.message
+    
+    try:
+        async with AsyncSessionLocal() as session:
+            db_user = await get_or_create_user(
+                session,
+                telegram_id=user.id,
+                full_name=user.first_name or "Unknown",
+                username=user.username
+            )
+            
+            count = await get_debtor_count_for_user(session, db_user.id)
+            
+            if count == 0:
+                await message.reply_text("📭 Bạn chưa có dữ liệu nợ nào để xóa.")
+                return
+            
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("⚠️ ĐỒNG Ý XÓA TẤT CẢ", callback_data="del_all_confirm")],
+                [InlineKeyboardButton("❌ Hủy", callback_data="del_all_cancel")]
+            ])
+            
+            msg = f"""🚨 **CẢNH BÁO: XÓA TOÀN BỘ DỮ LIỆU**
+
+Bạn có **{count}** hồ sơ nợ.
+
+🗑️ Lệnh này sẽ xóa:
+- TẤT CẢ hồ sơ người nợ
+- TẤT CẢ lịch sử giao dịch
+- TẤT CẢ biệt danh
+
+⚠️ **HÀNH ĐỘNG NÀY KHÔNG THỂ HOÀN TÁC!**
+
+Bạn có chắc chắn muốn tiếp tục?"""
+            
+            await message.reply_text(msg, reply_markup=keyboard, parse_mode="Markdown")
+            
+    except Exception as e:
+        await message.reply_text(f"❌ Lỗi: {str(e)}")
+
+
 __all__ = [
     "start_command",
     "help_command",
@@ -556,4 +786,7 @@ __all__ = [
     "history_command",
     "alias_command",
     "link_command",
+    "delete_transaction_command",
+    "delete_debtor_command",
+    "delete_all_command",
 ]

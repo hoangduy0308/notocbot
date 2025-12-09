@@ -32,7 +32,9 @@ from src.bot.handlers import (
     start_command, help_command, add_command, paid_command, 
     nlp_message_handler, button_callback_handler, alias_command,
     balance_command, summary_command, balance_callback_handler,
-    history_command, history_callback_handler, link_command
+    history_command, history_callback_handler, link_command,
+    delete_transaction_command, delete_debtor_command, delete_all_command,
+    delete_callback_handler
 )
 
 # Configure logging
@@ -74,9 +76,15 @@ def create_application() -> Application:
     app.add_handler(CommandHandler("history", history_command))  # Story 3.2: Transaction history
     app.add_handler(CommandHandler("log", history_command))  # Alias for /history
     
+    # Delete commands
+    app.add_handler(CommandHandler("xoagiaodich", delete_transaction_command))  # Delete single transaction
+    app.add_handler(CommandHandler("xoano", delete_debtor_command))  # Delete debtor and all history
+    app.add_handler(CommandHandler("xoatatca", delete_all_command))  # Delete all data
+    
     # Register callback handlers for inline buttons
     app.add_handler(CallbackQueryHandler(balance_callback_handler, pattern=r"^bal_"))
     app.add_handler(CallbackQueryHandler(history_callback_handler, pattern=r"^hist_"))
+    app.add_handler(CallbackQueryHandler(delete_callback_handler, pattern=r"^del_"))  # Delete confirmations
     app.add_handler(CallbackQueryHandler(button_callback_handler))  # Default for debtor selection
     
     # Register NLP message handler (natural language)

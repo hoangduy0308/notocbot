@@ -3,9 +3,9 @@ Debt service - Manage transactions (recording debts and credits).
 """
 
 from decimal import Decimal
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, case, text
+from sqlalchemy import select, func, case, text, delete
 from src.database.models import Transaction, Debtor
 
 
@@ -142,4 +142,146 @@ async def get_transaction_history(
     return list(result.scalars().all())
 
 
-__all__ = ["add_transaction", "get_balance", "get_all_debtors_balance", "get_transaction_history"]
+async def get_transaction_with_owner_check(
+    session: AsyncSession,
+    user_id: int,
+    transaction_id: int
+) -> Optional[Transaction]:
+    """
+    Get a transaction with ownership verification.
+    
+    Args:
+        session: AsyncSession instance
+        user_id: User ID (who is lending)
+        transaction_id: ID of the transaction
+        
+    Returns:
+        Transaction if found and owned by user, None otherwise
+    """
+    result = await session.execute(
+        select(Transaction)
+        .join(Debtor, Transaction.debtor_id == Debtor.id)
+        .where(
+            (Transaction.id == transaction_id) &
+            (Debtor.user_id == user_id)
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def delete_transaction(
+    session: AsyncSession,
+    user_id: int,
+    transaction_id: int
+) -> bool:
+    """
+    Delete a single transaction with ownership verification.
+    
+    Args:
+        session: AsyncSession instance
+        user_id: User ID (who is lending)
+        transaction_id: ID of the transaction to delete
+        
+    Returns:
+        True if deleted, False if not found or not owned
+    """
+    transaction = await get_transaction_with_owner_check(session, user_id, transaction_id)
+    
+    if not transaction:
+        return False
+    
+    await session.delete(transaction)
+    return True
+
+
+async def delete_debtor_and_history(
+    session: AsyncSession,
+    user_id: int,
+    debtor_id: int
+) -> bool:
+    """
+    Delete a debtor and all their transactions/aliases (via cascade).
+    
+    Args:
+        session: AsyncSession instance
+        user_id: User ID (who is lending)
+        debtor_id: ID of the debtor to delete
+        
+    Returns:
+        True if deleted, False if not found or not owned
+    """
+    result = await session.execute(
+        select(Debtor).where(
+            (Debtor.id == debtor_id) &
+            (Debtor.user_id == user_id)
+        )
+    )
+    debtor = result.scalar_one_or_none()
+    
+    if not debtor:
+        return False
+    
+    await session.delete(debtor)
+    return True
+
+
+async def delete_all_debt_for_user(
+    session: AsyncSession,
+    user_id: int
+) -> int:
+    """
+    Delete all debtors (and their transactions/aliases) for a user.
+    
+    Args:
+        session: AsyncSession instance
+        user_id: User ID (who is lending)
+        
+    Returns:
+        Number of debtors deleted
+    """
+    # First count how many will be deleted
+    count_result = await session.execute(
+        select(func.count(Debtor.id)).where(Debtor.user_id == user_id)
+    )
+    count = count_result.scalar() or 0
+    
+    if count > 0:
+        # Delete all debtors for this user (cascade will handle transactions/aliases)
+        await session.execute(
+            delete(Debtor).where(Debtor.user_id == user_id)
+        )
+    
+    return count
+
+
+async def get_debtor_count_for_user(
+    session: AsyncSession,
+    user_id: int
+) -> int:
+    """
+    Get the count of debtors for a user.
+    
+    Args:
+        session: AsyncSession instance
+        user_id: User ID
+        
+    Returns:
+        Number of debtors
+    """
+    result = await session.execute(
+        select(func.count(Debtor.id)).where(Debtor.user_id == user_id)
+    )
+    return result.scalar() or 0
+
+
+__all__ = [
+    "add_transaction",
+    "get_balance",
+    "get_all_debtors_balance",
+    "get_transaction_history",
+    "get_transaction_with_owner_check",
+    "delete_transaction",
+    "delete_debtor_and_history",
+    "delete_all_debt_for_user",
+    "get_debtor_count_for_user",
+]

@@ -14,11 +14,15 @@ from .commands import (
     history_command,
     alias_command,
     link_command,
+    delete_transaction_command,
+    delete_debtor_command,
+    delete_all_command,
 )
 from .callbacks import (
     button_callback_handler,
     balance_callback_handler,
     history_callback_handler,
+    delete_callback_handler,
 )
 from .nlp_handlers import (
     nlp_message_handler,
@@ -39,10 +43,14 @@ __all__ = [
     "history_command",
     "alias_command",
     "link_command",
+    "delete_transaction_command",
+    "delete_debtor_command",
+    "delete_all_command",
     # Callbacks
     "button_callback_handler",
     "balance_callback_handler",
     "history_callback_handler",
+    "delete_callback_handler",
     # NLP
     "nlp_message_handler",
     # Shared utilities (for external use if needed)
