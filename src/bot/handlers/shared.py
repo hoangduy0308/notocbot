@@ -25,7 +25,7 @@ from src.services.debt_service import (
     get_all_debtors_balance,
     get_transaction_history,
 )
-from src.utils.formatters import format_currency
+from src.utils.formatters import format_currency, format_due_date_relative
 
 
 async def record_transaction_with_debtor_id(
@@ -37,7 +37,8 @@ async def record_transaction_with_debtor_id(
     transaction_type: str,
     note: str = None,
     username: str = None,
-    bot=None
+    bot=None,
+    due_date: datetime = None,
 ) -> str:
     """
     Record transaction using an existing debtor ID.
@@ -52,6 +53,7 @@ async def record_transaction_with_debtor_id(
         note: Optional note
         username: Telegram @username (optional)
         bot: Telegram Bot instance (optional, for sending notifications)
+        due_date: Optional deadline for payment
         
     Returns:
         Formatted response message
@@ -71,7 +73,8 @@ async def record_transaction_with_debtor_id(
             debtor_id=debtor_id,
             amount=amount,
             transaction_type=transaction_type,
-            note=note
+            note=note,
+            due_date=due_date,
         )
         
         # Step 3: Get updated balance
@@ -117,7 +120,13 @@ async def record_transaction_with_debtor_id(
     else:
         balance_msg = "Hết nợ! 🎉"
     
-    return f"{msg}\n\n{balance_msg}"
+    response = f"{msg}\n\n{balance_msg}"
+    
+    if due_date:
+        deadline_str = format_due_date_relative(due_date)
+        response += f"\n⏰ Hạn trả: {deadline_str}"
+    
+    return response
 
 
 async def record_transaction(
@@ -128,7 +137,8 @@ async def record_transaction(
     transaction_type: str,
     note: str = None,
     username: str = None,
-    bot=None
+    bot=None,
+    due_date: datetime = None,
 ) -> str:
     """
     Unified transaction recording logic (for both /add and /paid commands).
@@ -142,6 +152,7 @@ async def record_transaction(
         note: Optional note
         username: str = None
         bot: Telegram Bot instance (optional, for sending notifications)
+        due_date: Optional deadline for payment
         
     Returns:
         Formatted response message
@@ -171,7 +182,8 @@ async def record_transaction(
             debtor_id=debtor.id,
             amount=amount,
             transaction_type=transaction_type,
-            note=note
+            note=note,
+            due_date=due_date,
         )
         
         # Step 4: Get updated balance
@@ -213,7 +225,13 @@ async def record_transaction(
     else:
         balance_msg = "Hết nợ! 🎉"
     
-    return f"{msg}\n\n{balance_msg}"
+    response = f"{msg}\n\n{balance_msg}"
+    
+    if due_date:
+        deadline_str = format_due_date_relative(due_date)
+        response += f"\n⏰ Hạn trả: {deadline_str}"
+    
+    return response
 
 
 async def show_individual_balance(update: Update, user, debtor_name: str) -> None:

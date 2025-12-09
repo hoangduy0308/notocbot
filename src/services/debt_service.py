@@ -2,6 +2,7 @@
 Debt service - Manage transactions (recording debts and credits).
 """
 
+from datetime import datetime
 from decimal import Decimal
 from typing import List, Tuple, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +16,8 @@ async def add_transaction(
     amount: Decimal,
     transaction_type: str,  # "DEBT" or "CREDIT"
     note: str = None,
-    group_id: int = None
+    group_id: int = None,
+    due_date: datetime = None
 ) -> Transaction:
     """
     Add a new transaction for a debtor.
@@ -27,6 +29,7 @@ async def add_transaction(
         transaction_type: "DEBT" or "CREDIT"
         note: Optional note about the transaction
         group_id: Optional Telegram group/chat ID where transaction was recorded
+        due_date: Optional deadline for payment
         
     Returns:
         Transaction instance
@@ -36,7 +39,8 @@ async def add_transaction(
         amount=amount,
         type=transaction_type,
         note=note,
-        group_id=group_id
+        group_id=group_id,
+        due_date=due_date
     )
     session.add(transaction)
     await session.flush()

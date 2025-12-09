@@ -82,6 +82,28 @@ When multiple matches are found, interactive buttons let users select the correc
 | `/xoagiaodich [ID]` | Delete a single transaction |
 | `/xoano [name]` | Delete all data for a person |
 | `/xoatatca` | Delete ALL debt data |
+| `/deadline [ID] [date]` | Set due date for a transaction |
+| `/duedate` or `/hansap` | View upcoming deadlines |
+
+### ⏰ Debt Deadlines
+
+Set deadlines for debts and get reminded before they're due:
+
+```
+📝 Setting Deadline:
+   /deadline 123 trong 5 ngày    → Due in 5 days
+   /deadline 123 1 tuần          → Due in 1 week
+   /deadline 123 25/12/2024      → Due on specific date
+   /deadline 123 xóa             → Remove deadline
+
+📋 Viewing Deadlines:
+   /duedate                      → All upcoming deadlines
+   /hansap 7                     → Due within 7 days
+
+💬 Natural Language (in notes):
+   "Tuấn nợ 50k tiền cafe trong 5 ngày"
+   → Auto-extracts deadline from note
+```
 
 ### 🔔 Real-time Notifications
 
@@ -397,9 +419,10 @@ tests/
 - [ ] Group chat support (multi-user debt splitting)
 - [ ] Monthly summary reports
 - [ ] Export to CSV/PDF
-- [ ] Payment reminders
+- [ ] Scheduled payment reminders (auto-notify before deadline)
 - [ ] Multi-currency support
-- [ ] Web dashboard
+- [x] Web dashboard ✅
+- [x] Debt deadlines / Due dates ✅
 
 ---
 

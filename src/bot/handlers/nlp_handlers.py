@@ -7,12 +7,14 @@ Handles natural language message parsing and processing.
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from decimal import Decimal
+from datetime import datetime
 
 from src.database.config import AsyncSessionLocal
 from src.services.user_service import get_or_create_user
 from src.services.debtor_service import resolve_debtor
 from src.utils.formatters import parse_amount
 from src.bot.nlp_engine import NLPEngine
+from src.bot.date_parser_vi import extract_due_date_from_note
 
 from .shared import (
     record_transaction,
@@ -67,6 +69,12 @@ async def nlp_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     transaction_type, debtor_name, amount_str, note = parse_result
     
+    # Extract due date from note if present
+    due_date = None
+    if note:
+        clean_note, due_date = extract_due_date_from_note(note, datetime.now())
+        note = clean_note if clean_note else None
+    
     # Parse and validate amount
     try:
         amount = parse_amount(amount_str)
@@ -103,7 +111,8 @@ async def nlp_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                     transaction_type=transaction_type,
                     note=note,
                     username=user.username,
-                    bot=context.bot
+                    bot=context.bot,
+                    due_date=due_date,
                 )
                 # If matched by alias, show which real name was used
                 if match_type == "alias":
@@ -144,7 +153,8 @@ async def nlp_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                     "amount": str(amount),
                     "transaction_type": transaction_type,
                     "note": note,
-                    "candidates": candidates_dict
+                    "candidates": candidates_dict,
+                    "due_date": due_date.isoformat() if due_date else None,
                 }
                 
                 action_text = "ghi nợ" if transaction_type == "DEBT" else "ghi nhận trả tiền"
@@ -161,7 +171,8 @@ async def nlp_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                     transaction_type=transaction_type,
                     note=note,
                     username=user.username,
-                    bot=context.bot
+                    bot=context.bot,
+                    due_date=due_date,
                 )
                 await update.message.reply_text(response)
                 

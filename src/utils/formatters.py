@@ -2,6 +2,7 @@
 Utility functions for formatting and parsing input.
 """
 
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 
@@ -67,4 +68,29 @@ def format_currency(amount: Decimal) -> str:
         return f"{amount:,}".replace(",", ".")
 
 
-__all__ = ["parse_amount", "format_currency"]
+def format_due_date(due_date: datetime) -> str:
+    """Format due date as Vietnamese date string."""
+    return due_date.strftime("%d/%m/%Y")
+
+
+def format_due_date_relative(due_date: datetime, now: datetime = None) -> str:
+    """
+    Format due date with relative time.
+    
+    Returns: "25/12/2024 (còn 5 ngày)" or "25/12/2024 (quá hạn 2 ngày)"
+    """
+    if now is None:
+        now = datetime.now()
+    
+    date_str = format_due_date(due_date)
+    delta = (due_date.date() - now.date()).days
+    
+    if delta > 0:
+        return f"{date_str} (còn {delta} ngày)"
+    elif delta == 0:
+        return f"{date_str} (hôm nay)"
+    else:
+        return f"{date_str} (quá hạn {abs(delta)} ngày)"
+
+
+__all__ = ["parse_amount", "format_currency", "format_due_date", "format_due_date_relative"]

@@ -4,10 +4,12 @@ Bot command handlers for NoTocBot.
 Handles all /command style interactions.
 """
 
+from datetime import datetime
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from decimal import Decimal
 import re
+from sqlalchemy import select
 
 from src.database.config import AsyncSessionLocal
 from src.database.models import Debtor
@@ -24,7 +26,12 @@ from src.services.debt_service import (
     get_transaction_with_owner_check,
     get_debtor_count_for_user,
 )
-from src.utils.formatters import format_currency, parse_amount
+from src.services.deadline_service import (
+    update_transaction_due_date,
+    list_upcoming_deadlines,
+)
+from src.bot.date_parser_vi import parse_vi_due_date
+from src.utils.formatters import format_currency, parse_amount, format_due_date_relative
 
 from .shared import (
     record_transaction,
@@ -71,6 +78,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /history - Xem lịch sử giao dịch
 /alias - Tạo biệt danh
 /link - Liên kết với Telegram user
+
+**⏰ Quản lý hạn trả:**
+/deadline [ID] [date] - Đặt hạn trả cho giao dịch
+/duedate - Xem các khoản nợ sắp đến hạn
 
 **🗑️ Xóa dữ liệu:**
 /xoagiaodich [ID] - Xóa một giao dịch
@@ -776,6 +787,184 @@ Bạn có chắc chắn muốn tiếp tục?"""
         await message.reply_text(f"❌ Lỗi: {str(e)}")
 
 
+async def deadline_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle /deadline command - Set/update/clear deadline for a transaction.
+    
+    Format: /deadline [ID] [date]
+    Example: /deadline 123 trong 5 ngày
+    """
+    user = update.effective_user
+    message = update.message
+    
+    if not context.args:
+        error_msg = """❌ Cú pháp không đúng!
+
+Cách dùng: `/deadline [ID giao dịch] [ngày hạn]`
+
+Ví dụ:
+- `/deadline 123 trong 5 ngày`
+- `/deadline 123 25/12/2024`
+- `/deadline 123 1 tuần`
+- `/deadline 123 xóa` - Xóa hạn trả
+
+💡 Xem ID giao dịch bằng lệnh `/history [Tên người]`"""
+        await message.reply_text(error_msg)
+        return
+    
+    try:
+        transaction_id = int(context.args[0])
+    except ValueError:
+        await message.reply_text("❌ ID giao dịch phải là số nguyên!")
+        return
+    
+    async with AsyncSessionLocal() as session:
+        db_user = await get_or_create_user(
+            session,
+            telegram_id=user.id,
+            full_name=user.first_name or "Unknown",
+            username=user.username
+        )
+        
+        transaction = await get_transaction_with_owner_check(
+            session, db_user.id, transaction_id
+        )
+        
+        if not transaction:
+            await message.reply_text("❌ Không tìm thấy giao dịch này hoặc bạn không có quyền chỉnh sửa.")
+            return
+        
+        debtor_result = await session.execute(
+            select(Debtor).where(Debtor.id == transaction.debtor_id)
+        )
+        debtor = debtor_result.scalar_one_or_none()
+        debtor_name = debtor.name if debtor else "Unknown"
+        
+        if len(context.args) == 1:
+            if transaction.due_date:
+                date_str = format_due_date_relative(transaction.due_date)
+                await message.reply_text(
+                    f"📅 Giao dịch [#{transaction_id}] với **{debtor_name}**\n"
+                    f"Hạn trả: **{date_str}**",
+                    parse_mode="Markdown"
+                )
+            else:
+                await message.reply_text(
+                    f"📅 Giao dịch [#{transaction_id}] với **{debtor_name}**\n"
+                    f"Chưa có hạn trả.",
+                    parse_mode="Markdown"
+                )
+            return
+        
+        date_text = " ".join(context.args[1:]).strip().lower()
+        
+        if date_text in ("xóa", "xoa", "clear", "none"):
+            await update_transaction_due_date(session, db_user.id, transaction_id, None)
+            await session.commit()
+            await message.reply_text(
+                f"✅ Đã xóa hạn trả cho giao dịch [#{transaction_id}] với **{debtor_name}**.",
+                parse_mode="Markdown"
+            )
+            return
+        
+        due_date = parse_vi_due_date(date_text)
+        if not due_date:
+            await message.reply_text(
+                "❌ Không hiểu định dạng ngày!\n\n"
+                "Ví dụ:\n"
+                "- `trong 5 ngày`\n"
+                "- `25/12/2024`\n"
+                "- `1 tuần`\n"
+                "- `ngày mai`"
+            )
+            return
+        
+        await update_transaction_due_date(session, db_user.id, transaction_id, due_date)
+        await session.commit()
+        
+        date_str = format_due_date_relative(due_date)
+        await message.reply_text(
+            f"✅ Đã đặt hạn trả cho giao dịch [#{transaction_id}] với **{debtor_name}**\n"
+            f"📅 Hạn: **{date_str}**",
+            parse_mode="Markdown"
+        )
+
+
+async def duedate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle /duedate command - View upcoming deadlines.
+    
+    Format: /duedate [days]
+    Example: /duedate 7
+    """
+    user = update.effective_user
+    message = update.message
+    
+    days = None
+    if context.args:
+        try:
+            days = int(context.args[0])
+            if days <= 0:
+                await message.reply_text("❌ Số ngày phải lớn hơn 0!")
+                return
+        except ValueError:
+            await message.reply_text("❌ Số ngày phải là số nguyên!")
+            return
+    
+    async with AsyncSessionLocal() as session:
+        db_user = await get_or_create_user(
+            session,
+            telegram_id=user.id,
+            full_name=user.first_name or "Unknown",
+            username=user.username
+        )
+        
+        transactions = await list_upcoming_deadlines(session, db_user.id, days=days)
+        
+        if not transactions:
+            if days:
+                await message.reply_text(f"📭 Không có khoản nợ nào đến hạn trong {days} ngày tới.")
+            else:
+                await message.reply_text("📭 Không có khoản nợ nào có hạn trả.")
+            return
+        
+        now = datetime.now()
+        overdue = []
+        upcoming = []
+        
+        for tx in transactions:
+            debtor_result = await session.execute(
+                select(Debtor).where(Debtor.id == tx.debtor_id)
+            )
+            debtor = debtor_result.scalar_one_or_none()
+            debtor_name = debtor.name if debtor else "Unknown"
+            
+            delta = (tx.due_date.date() - now.date()).days
+            date_str = format_due_date_relative(tx.due_date, now)
+            amount_str = format_currency(tx.amount)
+            note_str = f" - {tx.note}" if tx.note else ""
+            
+            line = f"• [#{tx.id}] **{debtor_name}**: {amount_str}{note_str}\n  📅 {date_str}"
+            
+            if delta < 0:
+                overdue.append(line)
+            else:
+                upcoming.append(line)
+        
+        parts = []
+        if overdue:
+            parts.append("🚨 **Đã quá hạn:**\n" + "\n".join(overdue))
+        if upcoming:
+            parts.append("⏰ **Sắp đến hạn:**\n" + "\n".join(upcoming))
+        
+        header = "📅 **DANH SÁCH HẠN TRẢ**"
+        if days:
+            header += f" (trong {days} ngày)"
+        
+        msg = header + "\n\n" + "\n\n".join(parts)
+        await message.reply_text(msg, parse_mode="Markdown")
+
+
 __all__ = [
     "start_command",
     "help_command",
@@ -789,4 +978,6 @@ __all__ = [
     "delete_transaction_command",
     "delete_debtor_command",
     "delete_all_command",
+    "deadline_command",
+    "duedate_command",
 ]

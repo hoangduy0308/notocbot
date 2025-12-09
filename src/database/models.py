@@ -92,6 +92,7 @@ class Transaction(Base):
     note = Column(String(500), nullable=True)
     group_id = Column(BigInteger, nullable=True)  # For future grouping
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    due_date = Column(DateTime, nullable=True, index=True)  # Optional deadline
     
     # Relationships
     debtor = relationship("Debtor", back_populates="transactions")
