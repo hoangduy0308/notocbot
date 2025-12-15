@@ -26,6 +26,51 @@ from src.services.debt_service import (
     get_transaction_history,
 )
 from src.utils.formatters import format_currency, format_due_date_relative
+from typing import List, Tuple
+
+
+def format_debt_summary(balances: List[Tuple[str, int, Decimal]]) -> str:
+    """
+    Format a debt summary from balance data.
+    
+    Args:
+        balances: List of (debtor_name, debtor_id, balance) tuples
+        
+    Returns:
+        Formatted summary string
+    """
+    if not balances:
+        return ""
+    
+    lines = ["📊 **TỔNG KẾT NỢ**\n"]
+    total_owed_to_us = Decimal("0")
+    total_we_owe = Decimal("0")
+    
+    for name, debtor_id, balance in balances:
+        if balance > 0:
+            emoji = "🔴"
+            total_owed_to_us += balance
+            lines.append(f"{emoji} {name}: {format_currency(balance)}")
+        else:
+            emoji = "🟢"
+            total_we_owe += abs(balance)
+            lines.append(f"{emoji} {name}: -{format_currency(abs(balance))}")
+    
+    lines.append("\n" + "─" * 25)
+    if total_owed_to_us > 0:
+        lines.append(f"🔴 Tổng người khác nợ bạn: **{format_currency(total_owed_to_us)}**")
+    if total_we_owe > 0:
+        lines.append(f"🟢 Tổng bạn nợ người khác: **{format_currency(total_we_owe)}**")
+    
+    net = total_owed_to_us - total_we_owe
+    if net > 0:
+        lines.append(f"\n💰 **Ròng: +{format_currency(net)}** (bạn được nhận)")
+    elif net < 0:
+        lines.append(f"\n💸 **Ròng: -{format_currency(abs(net))}** (bạn phải trả)")
+    else:
+        lines.append(f"\n⚖️ **Ròng: 0đ** (cân bằng)")
+    
+    return "\n".join(lines)
 
 
 async def record_transaction_with_debtor_id(
@@ -80,7 +125,10 @@ async def record_transaction_with_debtor_id(
         # Step 3: Get updated balance
         balance = await get_balance(session, debtor_id)
         
-        # Step 4: Check for notification (if bot is provided)
+        # Step 4: Get all balances for summary
+        all_balances = await get_all_debtors_balance(session, db_user.id)
+        
+        # Step 5: Check for notification (if bot is provided)
         if bot:
             result = await session.execute(select(Debtor).where(Debtor.id == debtor_id))
             debtor = result.scalar_one_or_none()
@@ -125,6 +173,10 @@ async def record_transaction_with_debtor_id(
     if due_date:
         deadline_str = format_due_date_relative(due_date)
         response += f"\n⏰ Hạn trả: {deadline_str}"
+    
+    if all_balances:
+        summary = format_debt_summary(all_balances)
+        response += f"\n\n{summary}"
     
     return response
 
@@ -189,7 +241,10 @@ async def record_transaction(
         # Step 4: Get updated balance
         balance = await get_balance(session, debtor.id)
         
-        # Step 5: Check for notification (if bot is provided)
+        # Step 5: Get all balances for summary
+        all_balances = await get_all_debtors_balance(session, db_user.id)
+        
+        # Step 6: Check for notification (if bot is provided)
         if bot and debtor.telegram_id:
             try:
                 formatted_amount = format_currency(amount)
@@ -230,6 +285,10 @@ async def record_transaction(
     if due_date:
         deadline_str = format_due_date_relative(due_date)
         response += f"\n⏰ Hạn trả: {deadline_str}"
+    
+    if all_balances:
+        summary = format_debt_summary(all_balances)
+        response += f"\n\n{summary}"
     
     return response
 
@@ -319,37 +378,7 @@ async def show_summary(update: Update, user) -> None:
                 await update.message.reply_text("✅ Bạn không có khoản nợ nào đang ghi nhận.")
                 return
             
-            # Build formatted message
-            lines = ["📊 **TỔNG KẾT NỢ**\n"]
-            total_owed_to_us = Decimal("0")  # Positive: they owe us
-            total_we_owe = Decimal("0")  # Negative: we owe them
-            
-            for name, debtor_id, balance in balances:
-                if balance > 0:
-                    emoji = "🔴"
-                    total_owed_to_us += balance
-                    lines.append(f"{emoji} {name}: {format_currency(balance)}")
-                else:
-                    emoji = "🟢"
-                    total_we_owe += abs(balance)
-                    lines.append(f"{emoji} {name}: -{format_currency(abs(balance))}")
-            
-            # Add summary line
-            lines.append("\n" + "─" * 25)
-            if total_owed_to_us > 0:
-                lines.append(f"🔴 Tổng người khác nợ bạn: **{format_currency(total_owed_to_us)}**")
-            if total_we_owe > 0:
-                lines.append(f"🟢 Tổng bạn nợ người khác: **{format_currency(total_we_owe)}**")
-            
-            net = total_owed_to_us - total_we_owe
-            if net > 0:
-                lines.append(f"\n💰 **Ròng: +{format_currency(net)}** (bạn được nhận)")
-            elif net < 0:
-                lines.append(f"\n💸 **Ròng: -{format_currency(abs(net))}** (bạn phải trả)")
-            else:
-                lines.append(f"\n⚖️ **Ròng: 0đ** (cân bằng)")
-            
-            msg = "\n".join(lines)
+            msg = format_debt_summary(balances)
             await update.message.reply_text(msg, parse_mode="Markdown")
             
     except Exception as e:
@@ -448,6 +477,7 @@ async def show_history(update: Update, user, debtor_name: str) -> None:
 
 
 __all__ = [
+    "format_debt_summary",
     "record_transaction",
     "record_transaction_with_debtor_id",
     "show_summary",
